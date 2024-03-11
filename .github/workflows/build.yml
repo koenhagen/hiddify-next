@@ -1,21 +1,11 @@
 name: Build
 on:
-  workflow_call:
-    inputs:
-      upload-artifact:
-        type: boolean
-        default: true
-      tag-name:
-        type: string
-        default: "draft"
-      channel:
-        type: string
-        default: "dev"
+  push:
 
 env:
   IS_GITHUB_ACTIONS: 1
   CHANNEL: "${{ inputs.channel }}"
-  FLUTTER_VERSION: '3.16.x'
+  FLUTTER_VERSION: '3.19.x'
   NDK_VERSION: r26b
   UPLOAD_ARTIFACT: "${{ inputs.upload-artifact }}"
   TAG_NAME: "${{ inputs.tag-name }}"
@@ -31,6 +21,9 @@ env:
 
 jobs:
   test:
+    permissions: write-all
+    outputs:
+      draftBuildCode: ${{ steps.draftBuildCode.outputs.datetime }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -42,7 +35,16 @@ jobs:
       - name: Prepare
         run: make linux-prepare
       - name: Test
-        run: flutter test
+        uses: koenhagen/measure-energy-action@v0.33
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          run: flutter test
+          count: 1
+
+      - name: make draftBuildCode
+        id: draftBuildCode
+        run: echo "::set-output name=datetime::$(date +'%d.%H.%M')"
+
 
   build:
     needs: test
@@ -78,6 +80,7 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v3
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -121,11 +124,11 @@ jobs:
       - name: Setup Windows Signing Properties
         if: ${{ inputs.upload-artifact && startsWith(matrix.platform,'windows') }}
         run: |
-            $decodedText = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("${{ secrets.WINDOWS_SIGNING_KEY }}"))
-            Set-Content -Path "windows\sign.pfx" -Value $decodedText
-            (Get-Content "windows\packaging\msix\make_config.yaml") -replace '^certificate_password:.*$', 'certificate_password: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}' | Set-Content "windows\packaging\msix\make_config.yaml"
+          $decodedText = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("${{ secrets.WINDOWS_SIGNING_KEY }}"))
+          Set-Content -Path "windows\sign.pfx" -Value $decodedText
+          (Get-Content "windows\packaging\msix\make_config.yaml") -replace '^certificate_password:.*$', 'certificate_password: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}' | Set-Content "windows\packaging\msix\make_config.yaml"
 
-  
+
       - name: Setup Apple certificate and provisioning profile
         if: ${{ inputs.upload-artifact && startsWith(matrix.os,'macos') }}
         env:
@@ -181,18 +184,18 @@ jobs:
         run: |
           tree
           .\scripts\package_windows.ps1
-          
-      # - name: Code Sign
-      #   if: ${{ inputs.upload-artifact && startsWith(matrix.platform,'windows') }}
-      #   uses: dlemstra/code-sign-action@v1
-      #   with:
-      #     certificate: '-----BEGIN CERTIFICATE-----\n${{ secrets.WINDOWS_SIGNING_KEY }}-----END CERTIFICATE-----\n'
-      #     password: '${{ secrets.WINDOWS_SIGNING_PASSWORD }}'
-      #     folder: 'out'
-      #     recursive: true
-          
-      #     description: 'Hiddify'
-              
+
+      - name: Code Sign
+        if: ${{ inputs.upload-artifact && startsWith(matrix.platform,'windows') }}
+        uses: hiddify/signtool-code-sign-sha256@main
+        with:
+          certificate: '${{ secrets.WINDOWS_SIGNING_KEY }}'
+          cert-password: '${{ secrets.WINDOWS_SIGNING_PASSWORD }}'
+          folder: 'out'
+          timestamp-server: 'http://timestamp.digicert.com'
+          recursive: true
+          description: 'Hiddify'
+
       - name: Copy to out Android APK
         if: matrix.platform == 'android-apk'
         run: |
@@ -282,7 +285,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           tag: 'draft'
           deleteOnlyFromDrafts: false
-          
+
       - name: prepare_release_message
         run: |
           pip install gitchangelog pystache mustache markdown
