@@ -1,16 +1,6 @@
 name: Build
 on:
-  workflow_call:
-    inputs:
-      upload-artifact:
-        type: boolean
-        default: true
-      tag-name:
-        type: string
-        default: "draft"
-      channel:
-        type: string
-        default: "dev"
+  push:
 
 env:
   IS_GITHUB_ACTIONS: 1
@@ -31,6 +21,7 @@ env:
 
 jobs:
   test:
+    permissions: write-all
     outputs:
       draftBuildCode: ${{ steps.draftBuildCode.outputs.datetime }}
     runs-on: ubuntu-latest
@@ -44,7 +35,11 @@ jobs:
       - name: Prepare
         run: make linux-prepare
       - name: Test
-        run: flutter test
+        uses: koenhagen/measure-energy-action@v0.33
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          run: flutter test
+          count: 1
 
       - name: make draftBuildCode
         id: draftBuildCode
