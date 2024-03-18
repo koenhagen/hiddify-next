@@ -39,7 +39,7 @@ jobs:
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           run: flutter test
-          count: 1
+          count: 10
 
       - name: make draftBuildCode
         id: draftBuildCode
